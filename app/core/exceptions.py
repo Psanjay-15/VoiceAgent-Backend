@@ -6,7 +6,7 @@ class NotFoundError(VoiceAgentError):
     status_code = 404
 
 
-class UnknownStateError(NotFoundError):
+class UnknownError(NotFoundError):
     status_code = 404
 
 
@@ -31,4 +31,8 @@ class RateLimitError(LLMError):
 
 
 class RetrievalError(VoiceAgentError):
+    status_code = 502
+
+
+class STTError(VoiceAgentError):
     status_code = 502
