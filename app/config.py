@@ -23,11 +23,17 @@ def _require(name: str) -> str:
 class Settings:
     def __init__(self) -> None:
         self.stt_provider: str = _env("STT_PROVIDER", "deepgram")
+        self.llm_provider: str = _env("LLM_PROVIDER", "gemini")
+        self.tts_provider: str = _env("TTS_PROVIDER", "deepgram")
 
         self.deepgram_api_key: str = _require("DEEPGRAM_API_KEY")
+        self.deepgram_stt_model: str = _env("DEEPGRAM_STT_MODEL") or "nova-3"
+        self.deepgram_tts_model: str = _env("DEEPGRAM_TTS_MODEL") or "aura-2-thalia-en"
         self.elevenlabs_api_key: str | None = _env("ELEVENLABS_API_KEY")
         self.openai_api_key: str | None = _env("OPENAI_API_KEY")
-        self.openai_model: str = _env("OPENAI_MODEL") 
+        self.gemini_api_key: str | None = _env("GEMINI_API_KEY")
+        self.gemini_model: str = _env("GEMINI_MODEL") or "gemini-2.5-flash"
+        self.openai_model: str = _env("OPENAI_MODEL") or "gpt-4.1-nano-2025-04-14"
 
         self.cors_origins: str = _env("CORS_ORIGINS") or ""
 

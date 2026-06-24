@@ -68,9 +68,12 @@ class DeepgramSTTStream(STTStream):
         if self._connection is not None:
             with contextlib.suppress(Exception):
                 await self._connection.send_close_stream()
-        self._runner.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await self._runner
+        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError, Exception):
+            await asyncio.wait_for(self._runner, timeout=2.0)
+        if not self._runner.done():
+            self._runner.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._runner
 
 
 class DeepgramSTT(STTProvider):
@@ -80,6 +83,7 @@ class DeepgramSTT(STTProvider):
         if not settings.deepgram_api_key:
             raise STTError("DEEPGRAM_API_KEY is not set")
         self._api_key = settings.deepgram_api_key
+        self._model = settings.deepgram_stt_model
 
     async def open_stream(
         self,
@@ -91,7 +95,7 @@ class DeepgramSTT(STTProvider):
         client = AsyncDeepgramClient(api_key=self._api_key)
 
         connect_kwargs = dict(
-            model="nova-3",
+            model=self._model,
             language=language,
             interim_results="true",  
             smart_format="true",    

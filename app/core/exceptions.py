@@ -36,3 +36,7 @@ class RetrievalError(VoiceAgentError):
 
 class STTError(VoiceAgentError):
     status_code = 502
+
+
+class TTSError(VoiceAgentError):
+    status_code = 502
