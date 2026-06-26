@@ -25,12 +25,22 @@ class GeminiLLM(LLMProvider):
         client = genai.Client(api_key=self._api_key)
 
         system = next((m["content"] for m in messages if m["role"] == "system"), None)
-        user_text = "\n".join(m["content"] for m in messages if m["role"] != "system")
-        config = types.GenerateContentConfig(system_instruction=system) if system else None
+        contents = [
+            types.Content(
+                role="model" if m["role"] == "assistant" else "user",
+                parts=[types.Part(text=m["content"])],
+            )
+            for m in messages
+            if m["role"] != "system"
+        ]
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),  
+        )
 
         stream = await client.aio.models.generate_content_stream(
             model=self._model,
-            contents=user_text,
+            contents=contents,
             config=config,
         )
         async for chunk in stream:

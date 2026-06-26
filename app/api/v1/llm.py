@@ -21,7 +21,7 @@ SYSTEM_PROMPT = (
     "This is a spoken phone call, so keep replies short and natural (one or two "
     "sentences), and when useful ask ONE brief follow-up to understand their need: "
     "whether they want to buy, sell, rent, or renovate, plus property type, location, "
-    "budget, and timeline. "
+    "budget, and timeline. Do not re-ask anything the caller has already told you if you are clear. "
     "Never invent specific listings, exact prices, or legal/financial advice — if "
     "unsure, say a human expert from the team will follow up. Keep the conversation on "
     "real estate and renovation; gently steer back if asked about something unrelated."
@@ -41,19 +41,20 @@ SYSTEM_PROMPT = (
 _SENTENCE_END = re.compile(r"[.!?]")
 
 GREETING = (
-    "Hi! Thanks for reaching out. I can help you buy, sell, rent, or renovate a home "
-    "in India. What are you looking for today?"
+    "Hi! how can I help you?"
 )
 
 
 class LLMService:
-    """Streams the LLM reply as text, and feeds it sentence-by-sentence to TTS."""
+    """Streams the LLM reply, feeds it sentence-by-sentence to TTS, and keeps the
+    running conversation so the model remembers what the caller already said."""
 
     def __init__(self, websocket: WebSocket, send_lock: asyncio.Lock) -> None:
         self._ws = websocket
         self._lock = send_lock
         self._provider = get_llm_provider()
         self._tts = TTSService(websocket, send_lock)
+        self._history: list[dict] = []   # running [user/assistant] turns for context
 
     async def _send(self, payload: dict) -> None:
         async with self._lock:
@@ -66,21 +67,25 @@ class LLMService:
         await self._send({"type": "llm", "text": GREETING})
         await self._tts.speak(GREETING)
         await self._send({"type": "llm_end"})
+        self._history.append({"role": "assistant", "content": GREETING})
 
     async def answer(self, question: str) -> None:
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": question},
-        ]
+        messages = (
+            [{"role": "system", "content": SYSTEM_PROMPT}]
+            + self._history
+            + [{"role": "user", "content": question}]
+        )
         log.info("llm answering (provider=%s): %r", self._provider.name, question)
         await self._send({"type": "llm_start"})
 
         tts_queue: asyncio.Queue = asyncio.Queue()
         tts_task = asyncio.create_task(self._tts_worker(tts_queue))
 
+        reply = ""
         buffer = ""
         async for token in self._provider.stream_reply(messages):
             await self._send({"type": "llm", "text": token})
+            reply += token
             buffer += token
             while True:
                 sentence, buffer = self._take_sentence(buffer)
@@ -90,9 +95,12 @@ class LLMService:
 
         if buffer.strip():
             await tts_queue.put(buffer.strip())
-        await tts_queue.put(None)     
-        await tts_task               
+        await tts_queue.put(None)
+        await tts_task
         await self._send({"type": "llm_end"})
+
+        self._history.append({"role": "user", "content": question})
+        self._history.append({"role": "assistant", "content": reply})
 
     async def _tts_worker(self, queue: asyncio.Queue) -> None:
         while True:

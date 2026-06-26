@@ -11,7 +11,7 @@ from app.stt.factory import get_stt_provider
 
 log = get_logger(__name__)
 
-END_OF_TURN_SILENCE = 2.0  
+END_OF_TURN_SILENCE = 1.5  
 
 
 class TranscriptionService:

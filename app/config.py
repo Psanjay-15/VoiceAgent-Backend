@@ -28,7 +28,7 @@ class Settings:
 
         self.deepgram_api_key: str = _require("DEEPGRAM_API_KEY")
         self.deepgram_stt_model: str = _env("DEEPGRAM_STT_MODEL") or "nova-3"
-        self.deepgram_tts_model: str = _env("DEEPGRAM_TTS_MODEL") or "aura-2-thalia-en"
+        self.deepgram_tts_model: str = _env("DEEPGRAM_TTS_MODEL") 
         self.elevenlabs_api_key: str | None = _env("ELEVENLABS_API_KEY")
         self.openai_api_key: str | None = _env("OPENAI_API_KEY")
         self.gemini_api_key: str | None = _env("GEMINI_API_KEY")
