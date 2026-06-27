@@ -1,0 +1,22 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Literal, Optional, TypedDict
+
+from app.llm.base import Message
+
+ActionType = Literal["in_person_meet", "online_meet", "send_material", "none"]
+
+
+class ActionState(TypedDict, total=False):
+    history: list[Message]
+    question: str
+    decision: dict[str, Any]
+    response: Optional[str]
+    action_status: Optional[str]
+
+
+@dataclass
+class ActionResult:
+    response: Optional[str] = None
+    status: Optional[str] = None

@@ -5,3 +5,6 @@ __pycache__/
 .DS_Store
 *.egg-info/
 docker-compose.yml
+credentials.json
+token.json
+.google_oauth_state.json

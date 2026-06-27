@@ -16,8 +16,18 @@ def _env(name: str, default: str | None = None) -> str | None:
 def _require(name: str) -> str:
     value = _env(name)
     if not value:
-        raise RuntimeError(f"{name} is not set — add it to .env")
+        raise RuntimeError(f"{name} is not set - add it to .env")
     return value
+
+
+def _env_int(name: str, default: int) -> int:
+    value = _env(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
 
 
 class Settings:
@@ -28,7 +38,7 @@ class Settings:
 
         self.deepgram_api_key: str = _require("DEEPGRAM_API_KEY")
         self.deepgram_stt_model: str = _env("DEEPGRAM_STT_MODEL") or "nova-3"
-        self.deepgram_tts_model: str = _env("DEEPGRAM_TTS_MODEL") 
+        self.deepgram_tts_model: str = _env("DEEPGRAM_TTS_MODEL") or "aura-2-thalia-en"
         self.elevenlabs_api_key: str | None = _env("ELEVENLABS_API_KEY")
         self.openai_api_key: str | None = _env("OPENAI_API_KEY")
         self.gemini_api_key: str | None = _env("GEMINI_API_KEY")
@@ -36,6 +46,29 @@ class Settings:
         self.openai_model: str = _env("OPENAI_MODEL") or "gpt-4.1-nano-2025-04-14"
 
         self.cors_origins: str = _env("CORS_ORIGINS") or ""
+
+        self.admin_email: str | None = _env("ADMIN_EMAIL")
+        self.business_contact_email: str | None = _env("BUSINESS_CONTACT_EMAIL")
+        self.business_contact_phone: str | None = _env("BUSINESS_CONTACT_PHONE")
+        self.brochure_url: str | None = _env("BROCHURE_URL")
+
+        self.smtp_host: str | None = _env("SMTP_HOST")
+        self.smtp_port: int = _env_int("SMTP_PORT", 587)
+        self.smtp_user: str | None = _env("SMTP_USER")
+        self.smtp_password: str | None = _env("SMTP_PASSWORD")
+        self.smtp_from: str | None = _env("SMTP_FROM")
+
+        self.pushover_token: str | None = _env("PUSHOVER_TOKEN")
+        self.pushover_user: str | None = _env("PUSHOVER_USER")
+
+        self.google_calendar_id: str = _env("GOOGLE_CALENDAR_ID", "primary") or "primary"
+        self.google_credentials_file: str | None = _env("GOOGLE_CREDENTIALS_FILE")
+        self.google_token_file: str | None = _env("GOOGLE_TOKEN_FILE")
+        self.google_redirect_uri: str = (
+            _env("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+            or "http://localhost:8000/auth/google/callback"
+        )
+        self.default_timezone: str = _env("DEFAULT_TIMEZONE", "Asia/Kolkata") or "Asia/Kolkata"
 
     @property
     def cors_origins_list(self) -> list[str]:

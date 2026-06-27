@@ -5,6 +5,7 @@ import re
 
 from fastapi import WebSocket
 
+from app.agent.business_actions import BusinessActionAgent
 from app.api.v1.tts import TTSService
 from app.core.logging import get_logger
 from app.llm.factory import get_llm_provider
@@ -22,6 +23,9 @@ SYSTEM_PROMPT = (
     "sentences), and when useful ask ONE brief follow-up to understand their need: "
     "whether they want to buy, sell, rent, or renovate, plus property type, location, "
     "budget, and timeline. Do not re-ask anything the caller has already told you if you are clear. "
+    "If the caller asks for a meeting, calendar invite, admin appointment, contact details, "
+    "or brochure, acknowledge that you can note it and collect their email if needed; do not say "
+    "you cannot schedule meetings. "
     "Never invent specific listings, exact prices, or legal/financial advice — if "
     "unsure, say a human expert from the team will follow up. Keep the conversation on "
     "real estate and renovation; gently steer back if asked about something unrelated."
@@ -44,6 +48,10 @@ GREETING = (
     "Hi! how can I help you?"
 )
 
+GOODBYE = (
+    "Thanks for speaking with us. Our team will follow up if needed. Have a great day!"
+)
+
 
 class LLMService:
     """Streams the LLM reply, feeds it sentence-by-sentence to TTS, and keeps the
@@ -54,6 +62,7 @@ class LLMService:
         self._lock = send_lock
         self._provider = get_llm_provider()
         self._tts = TTSService(websocket, send_lock)
+        self._actions = BusinessActionAgent()
         self._history: list[dict] = []   # running [user/assistant] turns for context
 
     async def _send(self, payload: dict) -> None:
@@ -70,6 +79,11 @@ class LLMService:
         self._history.append({"role": "assistant", "content": GREETING})
 
     async def answer(self, question: str) -> None:
+        action_response = await self._run_actions(question)
+        if action_response:
+            await self._send_spoken_reply(question, action_response)
+            return
+
         messages = (
             [{"role": "system", "content": SYSTEM_PROMPT}]
             + self._history
@@ -100,6 +114,38 @@ class LLMService:
         await self._send({"type": "llm_end"})
 
         self._history.append({"role": "user", "content": question})
+        self._history.append({"role": "assistant", "content": reply})
+
+    async def finish(self) -> None:
+        """Send the final admin summary and queued business actions when the call ends."""
+        try:
+            await self._actions.flush_pending_actions(self._history)
+        except Exception as e:
+            log.warning("final action flush failed: %s", e)
+
+    async def close_conversation(self, reason: str = "user_exit") -> None:
+        """Speak a closing line and send the final admin summary."""
+        log.info("closing conversation (reason=%s)", reason)
+        await self._send_spoken_reply("", GOODBYE, remember_user=False)
+        await self.finish()
+
+    async def _run_actions(self, question: str) -> str | None:
+        try:
+            result = await self._actions.run(self._history, question)
+        except Exception as e:
+            log.warning("business action graph failed: %s", e)
+            return None
+        if result.status and result.status != "no_action":
+            log.info("business action graph status=%s", result.status)
+        return result.response
+
+    async def _send_spoken_reply(self, question: str, reply: str, remember_user: bool = True) -> None:
+        await self._send({"type": "llm_start"})
+        await self._send({"type": "llm", "text": reply})
+        await self._tts.speak(reply)
+        await self._send({"type": "llm_end"})
+        if remember_user and question:
+            self._history.append({"role": "user", "content": question})
         self._history.append({"role": "assistant", "content": reply})
 
     async def _tts_worker(self, queue: asyncio.Queue) -> None:

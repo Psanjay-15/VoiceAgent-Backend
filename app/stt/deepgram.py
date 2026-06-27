@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import contextlib
+import time
 from deepgram import AsyncDeepgramClient
 from deepgram.core.events import EventType
 from app.config import settings
@@ -19,6 +20,8 @@ class DeepgramSTTStream(STTStream):
         self._queue: asyncio.Queue = asyncio.Queue()
         self._connection = None
         self._ready = asyncio.Event()
+        self._last_audio_at = time.monotonic()
+        self._keepalive_task = None
         self._runner = asyncio.create_task(self._run())
 
     async def _run(self) -> None:
@@ -26,17 +29,31 @@ class DeepgramSTTStream(STTStream):
             async with self._client.listen.v1.connect(**self._connect_kwargs) as connection:
                 self._connection = connection
                 connection.on(EventType.MESSAGE, self._on_message)
-                connection.on(EventType.ERROR, lambda e: log.warning("deepgram error: %s", e))
+                connection.on(EventType.ERROR, self._on_error)
                 connection.on(EventType.CLOSE, lambda _: self._queue.put_nowait(None))
                 self._ready.set()
+                self._keepalive_task = asyncio.create_task(self._keepalive())
                 await connection.start_listening()
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            log.warning("deepgram stream ended: %s", e)
+            message = str(e)
+            if "NET-0001" in message or "timeout window" in message:
+                log.info("deepgram stream idle-timeout; it will reopen on next audio")
+            else:
+                log.warning("deepgram stream ended: %s", e)
         finally:
+            if self._keepalive_task is not None:
+                self._keepalive_task.cancel()
             self._ready.set()
             self._queue.put_nowait(None)
+
+    def _on_error(self, error) -> None:
+        message = str(error)
+        if "NET-0001" in message or "timeout window" in message:
+            log.info("deepgram stream idle-timeout; it will reopen on next audio")
+            return
+        log.warning("deepgram error: %s", error)
 
     def _on_message(self, result) -> None:
         if getattr(result, "type", None) != "Results":
@@ -52,10 +69,28 @@ class DeepgramSTTStream(STTStream):
         await self._ready.wait()
         if self._connection is None:
             return
+        self._last_audio_at = time.monotonic()
         try:
             await self._connection.send_media(chunk)
         except Exception as e:
             log.warning("deepgram send_media failed: %s", e)
+
+    async def _keepalive(self) -> None:
+        while True:
+            await asyncio.sleep(5)
+            if self._connection is None:
+                continue
+            if time.monotonic() - self._last_audio_at < 5:
+                continue
+            for method_name in ("send_keep_alive", "keep_alive"):
+                method = getattr(self._connection, method_name, None)
+                if method is None:
+                    continue
+                with contextlib.suppress(Exception):
+                    result = method()
+                    if asyncio.iscoroutine(result):
+                        await result
+                break
 
     async def transcripts(self):
         while True:
@@ -65,6 +100,8 @@ class DeepgramSTTStream(STTStream):
             yield item
 
     async def close(self) -> None:
+        if self._keepalive_task is not None:
+            self._keepalive_task.cancel()
         if self._connection is not None:
             with contextlib.suppress(Exception):
                 await self._connection.send_close_stream()

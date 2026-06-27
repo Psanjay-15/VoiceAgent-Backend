@@ -12,6 +12,34 @@ from app.stt.factory import get_stt_provider
 log = get_logger(__name__)
 
 END_OF_TURN_SILENCE = 1.5  
+IDLE_CONVERSATION_TIMEOUT = 10.0
+END_CONVERSATION_PHRASES = (
+    "bye",
+    "goodbye",
+    "that's all",
+    "that is all",
+    "thats all",
+    "nothing else",
+    "no that's it",
+    "no that is it",
+    "no thats it",
+    "that's it",
+    "that is it",
+    "end the call",
+    "end call",
+    "stop the conversation",
+    "stop conversation",
+    "wrap up",
+    "we can wrap up",
+    "can wrap up",
+    "close now",
+    "we can close",
+    "close the conversation",
+    "talk later",
+    "speak later",
+    "thank you bye",
+    "thanks bye",
+)
 
 
 class TranscriptionService:
@@ -25,12 +53,17 @@ class TranscriptionService:
         self._buffer: list[str] = []        
         self._silence_task = None
         self._answer_task = None
+        self._idle_task = None
+        self._finished_summary = False
+        self._closing = False
 
     async def run(self) -> None:
         try:
             while True:
                 message = await self._ws.receive()
                 if message.get("type") == "websocket.disconnect":
+                    break
+                if self._closing:
                     break
 
                 text = message.get("text")
@@ -49,12 +82,23 @@ class TranscriptionService:
             await self._cleanup()
 
     async def _handle_control(self, text: str) -> None:
+        if self._closing:
+            return
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
             return
         if data.get("type") == "start":
             await self._llm.greet()   
+            self._restart_idle_timer()
+        elif data.get("type") == "stop":
+            await self._close_conversation("client_stop")
+
+    async def _finish_summary(self) -> None:
+        if self._finished_summary:
+            return
+        self._finished_summary = True
+        await self._llm.finish()
 
     async def _open_stream(self) -> None:
         if self._stream is not None:
@@ -65,6 +109,9 @@ class TranscriptionService:
 
     async def _forward_transcripts(self) -> None:
         async for transcript in self._stream.transcripts():
+            if self._closing:
+                break
+            self._cancel_idle_timer()
             async with self._send_lock:
                 with contextlib.suppress(Exception):
                     await self._ws.send_json(
@@ -81,6 +128,8 @@ class TranscriptionService:
             self._restart_silence_timer()
 
     def _restart_silence_timer(self) -> None:
+        if self._closing:
+            return
         if self._silence_task is not None and not self._silence_task.done():
             self._silence_task.cancel()
         self._silence_task = asyncio.create_task(self._answer_when_silent())
@@ -90,16 +139,55 @@ class TranscriptionService:
             await asyncio.sleep(END_OF_TURN_SILENCE)
         except asyncio.CancelledError:
             return
+        if self._closing:
+            return
         self._silence_task = None     # committed to answering; don't let a stray transcript cancel it
         question = " ".join(self._buffer).strip()
         self._buffer = []
         if question:
             log.info("end of turn -> llm: %r", question)
+            if self._is_end_conversation(question):
+                await self._close_conversation("user_exit")
+                return
             self._answer_task = asyncio.current_task()
             await self._llm.answer(question)
+            self._restart_idle_timer()
+
+    def _restart_idle_timer(self) -> None:
+        if self._closing:
+            return
+        self._cancel_idle_timer()
+        self._idle_task = asyncio.create_task(self._close_when_idle())
+
+    def _cancel_idle_timer(self) -> None:
+        current = asyncio.current_task()
+        if self._idle_task is not None and self._idle_task is not current and not self._idle_task.done():
+            self._idle_task.cancel()
+
+    async def _close_when_idle(self) -> None:
+        try:
+            await asyncio.sleep(IDLE_CONVERSATION_TIMEOUT)
+        except asyncio.CancelledError:
+            return
+        await self._close_conversation("idle_timeout")
+
+    async def _close_conversation(self, reason: str) -> None:
+        if self._closing:
+            return
+        self._closing = True
+        self._cancel_idle_timer()
+        await self._llm.close_conversation(reason)
+        self._finished_summary = True
+        with contextlib.suppress(Exception):
+            await self._ws.close(code=1000, reason=reason)
+
+    @staticmethod
+    def _is_end_conversation(text: str) -> bool:
+        lower = text.lower().strip()
+        return any(phrase in lower for phrase in END_CONVERSATION_PHRASES)
 
     async def _cleanup(self) -> None:
-        for task in (self._silence_task, self._answer_task, self._forward_task):
+        for task in (self._silence_task, self._answer_task, self._forward_task, self._idle_task):
             if task is not None:
                 task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -107,4 +195,5 @@ class TranscriptionService:
                 await self._forward_task
         if self._stream is not None:
             await self._stream.close()
+        await self._finish_summary()
         log.info("transcription session ended")
