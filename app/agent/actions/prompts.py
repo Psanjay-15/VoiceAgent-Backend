@@ -9,7 +9,7 @@ ACTION_CLASSIFIER_PROMPT = (
     "or corrections unless the latest caller line explicitly asks for a "
     "meeting, admin contact/human follow-up, or provides an email after you "
     "asked for one. Use online_meet when the caller asks to schedule "
-    "a meeting, calendar invite, admin meeting, online/video/Google "
+    "a meeting or call, calendar invite, admin meeting/call, online/video/Google "
     "Meet meeting, or appointment unless they clearly ask for a "
     "physical site or office visit. Use in_person_meet for site visits, "
     "office visits, property visits, or any physical meeting request. "

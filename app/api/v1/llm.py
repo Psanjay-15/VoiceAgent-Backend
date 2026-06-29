@@ -24,7 +24,9 @@ SYSTEM_PROMPT = (
     "gently redirected to real estate or renovation."
 )
 
-_SENTENCE_END = re.compile(r"[.!?]")
+_SPEAKABLE_PUNCTUATION = re.compile(r"[,;:!?]\s+|[.!?]\s*$")
+_MIN_CHUNK_WORDS = 8
+_MAX_CHUNK_CHARS = 80
 
 GREETING = (
     "Hi! how can I help you?"
@@ -36,7 +38,7 @@ GOODBYE = (
 
 
 class LLMService:
-    """Streams the LLM reply, feeds it sentence-by-sentence to TTS, and keeps the
+    """Streams the LLM reply, feeds it chunk-by-chunk to TTS, and keeps the
     running conversation so the model remembers what the caller already said."""
 
     def __init__(self, websocket: WebSocket, send_lock: asyncio.Lock) -> None:
@@ -90,10 +92,10 @@ class LLMService:
             reply += token
             buffer += token
             while True:
-                sentence, buffer = self._take_sentence(buffer)
-                if not sentence:
+                chunk, buffer = self._take_speakable_chunk(buffer)
+                if not chunk:
                     break
-                await tts_queue.put(sentence)
+                await tts_queue.put(chunk)
 
         if buffer.strip():
             await tts_queue.put(buffer.strip())
@@ -169,10 +171,30 @@ class LLMService:
                 await self._tts.speak(sentence)
 
     @staticmethod
-    def _take_sentence(buffer: str) -> tuple[str, str]:
-        """Pull the first complete sentence off the buffer; return (sentence, remainder)."""
-        match = _SENTENCE_END.search(buffer)
-        if not match:
+    def _take_speakable_chunk(buffer: str) -> tuple[str, str]:
+        """Pull a short natural TTS chunk from the stream buffer."""
+        stripped = buffer.strip()
+        if not stripped:
             return "", buffer
-        end = match.end()
-        return buffer[:end].strip(), buffer[end:]
+
+        punctuation = _SPEAKABLE_PUNCTUATION.search(buffer)
+        if punctuation:
+            end = punctuation.end()
+            return buffer[:end].strip(), buffer[end:]
+
+        words = stripped.split()
+        if len(words) >= _MIN_CHUNK_WORDS or len(stripped) >= _MAX_CHUNK_CHARS:
+            split_at = _chunk_boundary(buffer)
+            return buffer[:split_at].strip(), buffer[split_at:]
+
+        return "", buffer
+
+
+def _chunk_boundary(buffer: str) -> int:
+    words_seen = 0
+    for index, char in enumerate(buffer):
+        if char.isspace():
+            words_seen += 1
+            if words_seen >= _MIN_CHUNK_WORDS:
+                return index + 1
+    return len(buffer)

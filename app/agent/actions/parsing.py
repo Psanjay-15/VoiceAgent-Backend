@@ -98,6 +98,12 @@ def fallback_action(history: list[Message], question: str) -> ActionType:
             "calendar meeting",
             "meeting calendar",
             "calendar invite",
+            "schedule call",
+            "schedule a call",
+            "book a call",
+            "call with admin",
+            "call with an admin",
+            "admin call",
             "meet with admin",
             "meeting with admin",
             "appointment with admin",
@@ -140,6 +146,7 @@ def should_classify_business_action(history: list[Message], question: str) -> bo
             "meeting",
             "appointment",
             "calendar",
+            "call",
             "invite",
             "admin",
             "contact",
@@ -160,7 +167,16 @@ def latest_turn_supports_action(history: list[Message], question: str, action: A
 
 
 def pending_online_email(history: list[Message]) -> bool:
-    return last_assistant_contains(history, "what email address should i send the invite to")
+    return last_assistant_contains_any(
+        history,
+        (
+            "what email address should i send the invite to",
+            "please share your email",
+            "share your email",
+            "what email should i use",
+            "send the invite",
+        ),
+    )
 
 
 def has_pending_meeting_request(history: list[Message]) -> bool:
@@ -171,6 +187,7 @@ def has_pending_meeting_request(history: list[Message]) -> bool:
             or "meeting email" in item["content"].lower()
             or "send the invite" in item["content"].lower()
             or "schedule the meeting" in item["content"].lower()
+            or "schedule a call" in item["content"].lower()
             or "date and time" in item["content"].lower()
         )
         for item in history[-6:]
@@ -182,10 +199,15 @@ def pending_in_person_details(history: list[Message]) -> bool:
 
 
 def last_assistant_contains(history: list[Message], needle: str) -> bool:
+    return last_assistant_contains_any(history, (needle,))
+
+
+def last_assistant_contains_any(history: list[Message], needles: tuple[str, ...]) -> bool:
     for item in reversed(history):
         if item["role"] != "assistant":
             continue
-        return needle in item["content"].lower()
+        lower = item["content"].lower()
+        return any(needle in lower for needle in needles)
     return False
 
 
