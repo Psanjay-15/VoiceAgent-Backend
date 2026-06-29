@@ -58,9 +58,6 @@ class Settings:
         self.smtp_password: str | None = _env("SMTP_PASSWORD")
         self.smtp_from: str | None = _env("SMTP_FROM")
 
-        self.pushover_token: str | None = _env("PUSHOVER_TOKEN")
-        self.pushover_user: str | None = _env("PUSHOVER_USER")
-
         self.google_calendar_id: str = _env("GOOGLE_CALENDAR_ID", "primary") or "primary"
         self.google_credentials_file: str | None = _env("GOOGLE_CREDENTIALS_FILE")
         self.google_token_file: str | None = _env("GOOGLE_TOKEN_FILE")

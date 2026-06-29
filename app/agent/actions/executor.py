@@ -12,7 +12,6 @@ from app.llm.base import Message
 from app.llm.factory import get_llm_provider
 from app.tools.calendar import schedule_online_meeting
 from app.tools.email import send_email
-from app.tools.notify import send_push
 
 log = get_logger(__name__)
 
@@ -39,8 +38,6 @@ class QueuedActionExecutor:
                 action_lines.append(f"{kind} failed: {exc}")
 
         admin_body = admin_final_body(summary, action_lines)
-        push_title = "Voice Agent: Action + summary" if action_lines else "Voice Agent: Call summary"
-        await send_push(admin_body, title=push_title)
         if settings.admin_email:
             await send_email(settings.admin_email, "Voice Agent call summary", admin_body)
 
