@@ -31,7 +31,7 @@ def parse_decision(raw: str, history: list[Message], question: str) -> dict[str,
     transcript = format_transcript(history, question)
     email = normalize_email(data.get("email") or extract_email(question) or extract_email(transcript))
     action = data.get("action") or "none"
-    if action not in {"in_person_meet", "online_meet", "send_material", "none"}:
+    if action not in {"in_person_meet", "online_meet", "none"}:
         action = "none"
 
     fallback = fallback_action(history, question)
@@ -44,7 +44,6 @@ def parse_decision(raw: str, history: list[Message], question: str) -> dict[str,
         "action": action,
         "email": email,
         "requested_time": data.get("requested_time"),
-        "material_type": data.get("material_type"),
         "summary": data.get("summary") or question,
     }
 
@@ -62,8 +61,6 @@ def fallback_action(history: list[Message], question: str) -> ActionType:
     lower = question.lower()
     if pending_online_email(history) and extract_email(question):
         return "online_meet"
-    if pending_material_email(history) and extract_email(question):
-        return "send_material"
     if has_pending_meeting_request(history) and any(phrase in lower for phrase in ("go ahead", "schedule it", "send invite")):
         return "online_meet"
     if pending_in_person_details(history) and looks_like_meeting_detail(lower):
@@ -107,8 +104,6 @@ def fallback_action(history: list[Message], question: str) -> ActionType:
         )
     ):
         return "online_meet"
-    if any(phrase in lower for phrase in ("brochure", "catalogue", "catalog", "contact details", "email me", "send details")):
-        return "send_material"
     return "none"
 
 
@@ -116,7 +111,7 @@ def should_classify_business_action(history: list[Message], question: str) -> bo
     if fallback_action(history, question) != "none":
         return True
     lower = question.lower()
-    if "@" in question and (has_pending_meeting_request(history) or pending_material_email(history)):
+    if "@" in question and has_pending_meeting_request(history):
         return True
     return any(
         phrase in lower
@@ -126,13 +121,7 @@ def should_classify_business_action(history: list[Message], question: str) -> bo
             "appointment",
             "calendar",
             "invite",
-            "contact",
-            "brochure",
-            "catalog",
-            "catalogue",
             "email",
-            "mail",
-            "details",
             "visit",
         )
     )
@@ -141,8 +130,6 @@ def should_classify_business_action(history: list[Message], question: str) -> bo
 def latest_turn_supports_action(history: list[Message], question: str, action: ActionType) -> bool:
     if action == "online_meet":
         return fallback_action(history, question) == "online_meet"
-    if action == "send_material":
-        return fallback_action(history, question) == "send_material"
     if action == "in_person_meet":
         return fallback_action(history, question) == "in_person_meet"
     return False
@@ -162,10 +149,6 @@ def has_pending_meeting_request(history: list[Message]) -> bool:
         )
         for item in history[-6:]
     )
-
-
-def pending_material_email(history: list[Message]) -> bool:
-    return last_assistant_contains(history, "what email address should i use")
 
 
 def pending_in_person_details(history: list[Message]) -> bool:

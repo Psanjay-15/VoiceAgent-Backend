@@ -48,9 +48,6 @@ class Settings:
         self.cors_origins: str = _env("CORS_ORIGINS") or ""
 
         self.admin_email: str | None = _env("ADMIN_EMAIL")
-        self.business_contact_email: str | None = _env("BUSINESS_CONTACT_EMAIL")
-        self.business_contact_phone: str | None = _env("BUSINESS_CONTACT_PHONE")
-        self.brochure_url: str | None = _env("BROCHURE_URL")
 
         self.smtp_host: str | None = _env("SMTP_HOST")
         self.smtp_port: int = _env_int("SMTP_PORT", 587)

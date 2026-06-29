@@ -103,8 +103,7 @@ def _schedule_online_meeting_sync(
             )
 
     service = build("calendar", "v3", credentials=creds)
-    preferred = _parse_or_default_time(requested_time)
-    start = _find_available_slot(service, preferred, duration_minutes)
+    start = _parse_or_default_time(requested_time)
     end = start + timedelta(minutes=duration_minutes)
     body = {
         "summary": "Online real estate consultation",
@@ -233,38 +232,6 @@ def _parse_natural_time(lower: str) -> tuple[int, int]:
     elif suffix is None and hour == 12:
         hour = 12
     return hour, minute
-
-
-def _find_available_slot(service, preferred: datetime, duration_minutes: int) -> datetime:
-    slot = preferred
-    for _ in range(56):
-        slot = _normalize_business_hour(slot)
-        if _slot_is_free(service, slot, duration_minutes):
-            return slot
-        slot += timedelta(minutes=30)
-    return preferred
-
-
-def _slot_is_free(service, start: datetime, duration_minutes: int) -> bool:
-    end = start + timedelta(minutes=duration_minutes)
-    body = {
-        "timeMin": start.isoformat(),
-        "timeMax": end.isoformat(),
-        "timeZone": settings.default_timezone,
-        "items": [{"id": settings.google_calendar_id}],
-    }
-    result = service.freebusy().query(body=body).execute()
-    busy = result.get("calendars", {}).get(settings.google_calendar_id, {}).get("busy", [])
-    return not busy
-
-
-def _normalize_business_hour(value: datetime) -> datetime:
-    if value.hour < 10:
-        return value.replace(hour=10, minute=0, second=0, microsecond=0)
-    if value.hour >= 18:
-        next_day = value + timedelta(days=1)
-        return next_day.replace(hour=10, minute=0, second=0, microsecond=0)
-    return value
 
 
 def _build_web_flow():

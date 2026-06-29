@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.actions.llm_utils import collect_reply
-from app.agent.actions.messages import admin_final_body, material_email_body
+from app.agent.actions.messages import admin_final_body
 from app.agent.actions.parsing import format_transcript
 from app.agent.actions.prompts import ADMIN_SUMMARY_PROMPT
 from app.config import settings
@@ -27,9 +27,7 @@ class QueuedActionExecutor:
         for action in actions:
             kind = action["action"]
             try:
-                if kind == "send_material":
-                    action_lines.append(await self._send_material(action))
-                elif kind == "online_meet":
+                if kind == "online_meet":
                     action_lines.append(await self._schedule_online(action))
                 elif kind == "in_person_meet":
                     action_lines.append(f"In-person meeting requested: {action.get('summary')}")
@@ -40,14 +38,6 @@ class QueuedActionExecutor:
         admin_body = admin_final_body(summary, action_lines)
         if settings.admin_email:
             await send_email(settings.admin_email, "Voice Agent call summary", admin_body)
-
-    async def _send_material(self, action: dict[str, Any]) -> str:
-        email = action.get("email")
-        if not email:
-            return f"Material/contact request needs email: {action.get('summary')}"
-        sent = await send_email(email, "Real estate and renovation details", material_email_body())
-        status = "sent" if sent else "failed"
-        return f"Material/contact email {status} for {email}: {action.get('summary')}"
 
     async def _schedule_online(self, action: dict[str, Any]) -> str:
         email = action.get("email")

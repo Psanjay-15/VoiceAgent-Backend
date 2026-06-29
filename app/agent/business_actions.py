@@ -19,7 +19,7 @@ log = get_logger(__name__)
 
 
 class BusinessActionAgent:
-    """LangGraph router for business actions around the voice conversation."""
+    """LangGraph router for agentic business actions around the voice conversation."""
 
     def __init__(self) -> None:
         self._provider = get_llm_provider()
@@ -28,13 +28,11 @@ class BusinessActionAgent:
             route=self._route,
             in_person=self._handle_in_person,
             online=self._handle_online,
-            material=self._handle_material,
             none=self._handle_none,
         )
         self._executor = QueuedActionExecutor()
         self._email_state = ConversationEmailState()
         self._in_person_notified = False
-        self._material_emails: set[str] = set()
         self._online_meeting_emails: set[str] = set()
         self._pending_actions: list[dict[str, Any]] = []
         self._flush_lock = asyncio.Lock()
@@ -75,8 +73,7 @@ class BusinessActionAgent:
             {"role": "user", "content": transcript},
         ]
         raw = await collect_reply(self._provider, prompt)
-        decision = parse_decision(raw, history, question)
-        state["decision"] = decision
+        state["decision"] = parse_decision(raw, history, question)
         return state
 
     def _route(self, state: ActionState) -> ActionType:
@@ -87,7 +84,6 @@ class BusinessActionAgent:
         already_notified = self._in_person_notified
         self._in_person_notified = True
         self._queue_action("in_person_meet", decision)
-        state["action_status"] = "in_person_queued"
         if already_notified:
             state["response"] = "Got it, I have noted those meeting preferences. Our team will contact you to confirm."
         else:
@@ -95,44 +91,26 @@ class BusinessActionAgent:
                 "Sure, I have noted that you want an in-person meeting. "
                 "Could you also share your preferred area and time if you have one?"
             )
+        state["action_status"] = "in_person_queued"
         return state
 
     async def _handle_online(self, state: ActionState) -> ActionState:
         decision = state["decision"]
         email = decision.get("email")
         if not email:
-            state["action_status"] = "online_missing_email"
             state["response"] = "Sure, I can arrange a calendar meeting. What email address should I send the invite to?"
+            state["action_status"] = "online_missing_email"
             return state
         self._email_state.remember(email)
         if email in self._online_meeting_emails:
-            state["action_status"] = "online_already_queued"
             state["response"] = "I already have your email for the calendar meeting. I will include it in the final request."
+            state["action_status"] = "online_already_queued"
             return state
 
         self._queue_action("online_meet", decision)
-        state["action_status"] = "online_queued"
         self._online_meeting_emails.add(email)
         state["response"] = "I have your email. I will schedule the calendar meeting when we wrap up."
-        return state
-
-    async def _handle_material(self, state: ActionState) -> ActionState:
-        decision = state["decision"]
-        email = decision.get("email")
-        if not email:
-            state["action_status"] = "material_missing_email"
-            state["response"] = "Sure, I can send that to you. What email address should I use?"
-            return state
-        self._email_state.remember(email)
-        if email in self._material_emails:
-            state["action_status"] = "material_already_handled"
-            state["response"] = "I already have your email and have noted the request. I will send the details there when we wrap up."
-            return state
-
-        self._queue_action("send_material", decision)
-        state["action_status"] = "material_queued"
-        self._material_emails.add(email)
-        state["response"] = "I have noted your email. I will send the contact details when we wrap up."
+        state["action_status"] = "online_queued"
         return state
 
     async def _handle_none(self, state: ActionState) -> ActionState:
@@ -167,9 +145,6 @@ class BusinessActionAgent:
         """Keep meeting details stable while allowing later email corrections."""
         if decision.get("email"):
             existing["email"] = decision["email"]
-
-        if decision.get("material_type"):
-            existing["material_type"] = decision["material_type"]
 
         requested_time = decision.get("requested_time")
         if requested_time:
