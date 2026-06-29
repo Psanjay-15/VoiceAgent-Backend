@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -32,12 +33,9 @@ async def schedule_online_meeting(
     summary: str,
     requested_time: str | None = None,
     duration_minutes: int = 30,
+    request_id: str | None = None,
 ) -> CalendarResult:
-    """Create a Google Calendar event with a Meet link.
 
-    requested_time is intentionally simple for this version: pass an ISO datetime
-    when the caller has given one, otherwise the helper picks tomorrow at 11:00.
-    """
     if not settings.google_credentials_file:
         log.warning("Google Calendar not configured - missing GOOGLE_CREDENTIALS_FILE")
         return CalendarResult(False, "Google Calendar is not configured.")
@@ -48,6 +46,7 @@ async def schedule_online_meeting(
         summary=summary,
         requested_time=requested_time,
         duration_minutes=duration_minutes,
+        request_id=request_id,
     )
 
 
@@ -78,10 +77,12 @@ def _schedule_online_meeting_sync(
     summary: str,
     requested_time: str | None,
     duration_minutes: int,
+    request_id: str | None,
 ) -> CalendarResult:
     try:
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
+        from googleapiclient.errors import HttpError
         from googleapiclient.discovery import build
     except ImportError:
         return CalendarResult(False, "Google Calendar libraries are not installed.")
@@ -113,23 +114,36 @@ def _schedule_online_meeting_sync(
         "attendees": [{"email": attendee_email}],
         "conferenceData": {
             "createRequest": {
-                "requestId": f"voice-agent-{int(datetime.now().timestamp())}",
+                "requestId": request_id or f"voice-agent-{int(datetime.now().timestamp())}",
                 "conferenceSolutionKey": {"type": "hangoutsMeet"},
             }
         },
     }
-    event = (
-        service.events()
-        .insert(
-            calendarId=settings.google_calendar_id,
-            body=body,
-            conferenceDataVersion=1,
-            sendUpdates="all",
+    if request_id:
+        body["id"] = _calendar_event_id(request_id)
+
+    try:
+        event = (
+            service.events()
+            .insert(
+                calendarId=settings.google_calendar_id,
+                body=body,
+                conferenceDataVersion=1,
+                sendUpdates="all",
+            )
+            .execute()
         )
-        .execute()
-    )
+    except HttpError as exc:
+        if getattr(exc, "status_code", None) == 409 or getattr(getattr(exc, "resp", None), "status", None) == 409:
+            return CalendarResult(True, "Online meeting was already scheduled.")
+        raise
     link = event.get("hangoutLink") or event.get("htmlLink")
     return CalendarResult(True, "Online meeting scheduled.", link)
+
+
+def _calendar_event_id(request_id: str) -> str:
+    digest = hashlib.sha1(request_id.encode("utf-8")).hexdigest()
+    return f"va{digest[:24]}"
 
 
 def _parse_or_default_time(value: str | None) -> datetime:

@@ -64,6 +64,12 @@ class LLMService:
         self._tts = TTSService(websocket, send_lock)
         self._actions = BusinessActionAgent()
         self._history: list[dict] = []   # running [user/assistant] turns for context
+        self._finish_lock = asyncio.Lock()
+        self._finished = False
+
+    @property
+    def history(self) -> list[dict]:
+        return list(self._history)
 
     async def _send(self, payload: dict) -> None:
         async with self._lock:
@@ -78,11 +84,11 @@ class LLMService:
         await self._send({"type": "llm_end"})
         self._history.append({"role": "assistant", "content": GREETING})
 
-    async def answer(self, question: str) -> None:
+    async def answer(self, question: str) -> str:
         action_response = await self._run_actions(question)
         if action_response:
             await self._send_spoken_reply(question, action_response)
-            return
+            return action_response
 
         messages = (
             [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -115,13 +121,18 @@ class LLMService:
 
         self._history.append({"role": "user", "content": question})
         self._history.append({"role": "assistant", "content": reply})
+        return reply
 
     async def finish(self) -> None:
         """Send the final admin summary and queued business actions when the call ends."""
-        try:
-            await self._actions.flush_pending_actions(self._history)
-        except Exception as e:
-            log.warning("final action flush failed: %s", e)
+        async with self._finish_lock:
+            if self._finished:
+                return
+            self._finished = True
+            try:
+                await self._actions.flush_pending_actions(self._history)
+            except Exception as e:
+                log.warning("final action flush failed: %s", e)
 
     async def close_conversation(self, reason: str = "user_exit") -> None:
         """Speak a closing line and send the final admin summary."""

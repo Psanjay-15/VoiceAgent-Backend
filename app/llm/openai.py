@@ -17,12 +17,14 @@ class OpenAILLM(LLMProvider):
             raise LLMError("OPENAI_API_KEY is not set")
         self._api_key = settings.openai_api_key
         self._model = settings.openai_model or "gpt-4o-mini"
+        self._client = None
 
     async def stream_reply(self, messages: list[Message]) -> AsyncIterator[str]:
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=self._api_key)
-        stream = await client.chat.completions.create(
+        if self._client is None:
+            self._client = AsyncOpenAI(api_key=self._api_key)
+        stream = await self._client.chat.completions.create(
             model=self._model,
             messages=messages,
             stream=True,

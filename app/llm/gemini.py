@@ -17,12 +17,14 @@ class GeminiLLM(LLMProvider):
             raise LLMError("GEMINI_API_KEY is not set")
         self._api_key = settings.gemini_api_key
         self._model = settings.gemini_model
+        self._client = None
 
     async def stream_reply(self, messages: list[Message]) -> AsyncIterator[str]:
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=self._api_key)
+        if self._client is None:
+            self._client = genai.Client(api_key=self._api_key)
 
         system = next((m["content"] for m in messages if m["role"] == "system"), None)
         contents = [
@@ -38,7 +40,7 @@ class GeminiLLM(LLMProvider):
             thinking_config=types.ThinkingConfig(thinking_budget=0),  
         )
 
-        stream = await client.aio.models.generate_content_stream(
+        stream = await self._client.aio.models.generate_content_stream(
             model=self._model,
             contents=contents,
             config=config,

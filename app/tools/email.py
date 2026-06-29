@@ -16,7 +16,7 @@ async def send_email(to: str, subject: str, body: str) -> bool:
 
     msg = EmailMessage()
     msg["From"] = settings.smtp_from or settings.smtp_user
-    msg["To"] = "sspandere26@gmail.com"
+    msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
 

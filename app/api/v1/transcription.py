@@ -5,41 +5,15 @@ import json
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from app.agent.turn_intent.classifier import TurnIntentClassifier
 from app.api.v1.llm import LLMService
 from app.core.logging import get_logger
 from app.stt.factory import get_stt_provider
 
 log = get_logger(__name__)
 
-END_OF_TURN_SILENCE = 1.5  
-IDLE_CONVERSATION_TIMEOUT = 10.0
-END_CONVERSATION_PHRASES = (
-    "bye",
-    "goodbye",
-    "that's all",
-    "that is all",
-    "thats all",
-    "nothing else",
-    "no that's it",
-    "no that is it",
-    "no thats it",
-    "that's it",
-    "that is it",
-    "end the call",
-    "end call",
-    "stop the conversation",
-    "stop conversation",
-    "wrap up",
-    "we can wrap up",
-    "can wrap up",
-    "close now",
-    "we can close",
-    "close the conversation",
-    "talk later",
-    "speak later",
-    "thank you bye",
-    "thanks bye",
-)
+END_OF_TURN_SILENCE = 1.0
+IDLE_CONVERSATION_TIMEOUT = 45.0
 
 
 class TranscriptionService:
@@ -48,6 +22,7 @@ class TranscriptionService:
         self._provider = get_stt_provider()
         self._send_lock = asyncio.Lock()
         self._llm = LLMService(websocket, self._send_lock)
+        self._turn_intent = TurnIntentClassifier()
         self._stream = None
         self._forward_task = None
         self._buffer: list[str] = []        
@@ -90,7 +65,6 @@ class TranscriptionService:
             return
         if data.get("type") == "start":
             await self._llm.greet()   
-            self._restart_idle_timer()
         elif data.get("type") == "stop":
             await self._close_conversation("client_stop")
 
@@ -146,12 +120,13 @@ class TranscriptionService:
         self._buffer = []
         if question:
             log.info("end of turn -> llm: %r", question)
-            if self._is_end_conversation(question):
+            if await self._is_end_conversation(question):
                 await self._close_conversation("user_exit")
                 return
             self._answer_task = asyncio.current_task()
-            await self._llm.answer(question)
-            self._restart_idle_timer()
+            reply = await self._llm.answer(question)
+            if self._should_arm_idle_close(reply):
+                self._restart_idle_timer()
 
     def _restart_idle_timer(self) -> None:
         if self._closing:
@@ -181,10 +156,59 @@ class TranscriptionService:
         with contextlib.suppress(Exception):
             await self._ws.close(code=1000, reason=reason)
 
+    async def _is_end_conversation(self, text: str) -> bool:
+        if not self._may_be_end_conversation(text):
+            return False
+        result = await self._turn_intent.classify(self._llm.history, text)
+        log.info(
+            "turn intent classified: intent=%s confidence=%.2f reason=%s",
+            result.intent,
+            result.confidence,
+            result.reason,
+        )
+        return result.should_end
+
     @staticmethod
-    def _is_end_conversation(text: str) -> bool:
-        lower = text.lower().strip()
-        return any(phrase in lower for phrase in END_CONVERSATION_PHRASES)
+    def _may_be_end_conversation(text: str) -> bool:
+        lower = text.lower()
+        return any(
+            phrase in lower
+            for phrase in (
+                "bye",
+                "goodbye",
+                "thank",
+                "thanks",
+                "that's it",
+                "that is it",
+                "nothing else",
+                "no more",
+                "wrap up",
+                "close",
+                "end",
+                "stop",
+                "done",
+                "fine for now",
+                "all for now",
+            )
+        )
+
+    @staticmethod
+    def _should_arm_idle_close(reply: str | None) -> bool:
+        if not reply:
+            return False
+        lower = reply.lower()
+        return any(
+            phrase in lower
+            for phrase in (
+                "anything else",
+                "further assistance",
+                "need any more",
+                "if you need",
+                "when we wrap up",
+                "have a great day",
+                "would you like their contact details",
+            )
+        )
 
     async def _cleanup(self) -> None:
         for task in (self._silence_task, self._answer_task, self._forward_task, self._idle_task):

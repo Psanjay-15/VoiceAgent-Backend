@@ -91,8 +91,11 @@ def fallback_action(history: list[Message], question: str) -> ActionType:
             "zoom",
             "schedule meet",
             "schedule a meet",
+            "schedule calendar meet",
+            "schedule a calendar meet",
             "schedule meeting",
             "schedule a meeting",
+            "calendar meet",
             "calendar meeting",
             "meeting calendar",
             "calendar invite",
@@ -107,6 +110,32 @@ def fallback_action(history: list[Message], question: str) -> ActionType:
     if any(phrase in lower for phrase in ("brochure", "catalogue", "catalog", "contact details", "email me", "send details")):
         return "send_material"
     return "none"
+
+
+def should_classify_business_action(history: list[Message], question: str) -> bool:
+    if fallback_action(history, question) != "none":
+        return True
+    lower = question.lower()
+    if "@" in question and (has_pending_meeting_request(history) or pending_material_email(history)):
+        return True
+    return any(
+        phrase in lower
+        for phrase in (
+            "meet",
+            "meeting",
+            "appointment",
+            "calendar",
+            "invite",
+            "contact",
+            "brochure",
+            "catalog",
+            "catalogue",
+            "email",
+            "mail",
+            "details",
+            "visit",
+        )
+    )
 
 
 def latest_turn_supports_action(history: list[Message], question: str, action: ActionType) -> bool:
