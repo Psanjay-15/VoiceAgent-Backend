@@ -28,7 +28,7 @@ class ConversationEmailState:
             )
             return EmailControlResult(email=self.current_email, response=response, status="email_confirmed")
 
-        corrected = self._correct_from_text(text)
+        corrected = self.correct_from_text(text)
         if corrected and has_pending_meeting:
             self.current_email = corrected
             return EmailControlResult(
@@ -43,7 +43,7 @@ class ConversationEmailState:
         lower = text.lower()
         return "email" in lower and any(phrase in lower for phrase in ("show", "repeat", "confirm", "what is", "tell me"))
 
-    def _correct_from_text(self, text: str) -> Optional[str]:
+    def correct_from_text(self, text: str) -> Optional[str]:
         if not self.current_email:
             return None
         lower = text.lower()
@@ -55,4 +55,6 @@ class ConversationEmailState:
             local, sep, domain = self.current_email.partition("@")
             if sep:
                 return f"{local}@{domain.replace('red', '', 1)}"
+        if any(phrase in lower for phrase in ("lower case", "lowercase", "smaller case", "small case")):
+            return self.current_email.lower()
         return None

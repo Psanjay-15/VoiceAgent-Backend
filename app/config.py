@@ -68,9 +68,4 @@ class Settings:
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
-    @property
-    def has_openai(self) -> bool:
-        return bool(self.openai_api_key)
-
-
 settings = Settings()

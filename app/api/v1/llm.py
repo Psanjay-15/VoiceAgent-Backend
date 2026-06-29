@@ -119,7 +119,8 @@ class LLMService:
     async def close_conversation(self, reason: str = "user_exit") -> None:
         """Speak a closing line and send the final admin summary."""
         log.info("closing conversation (reason=%s)", reason)
-        await self._send_spoken_reply("", GOODBYE, remember_user=False)
+        if not self._last_assistant_reply_was_closing():
+            await self._send_spoken_reply("", GOODBYE, remember_user=False)
         await self.finish()
 
     async def _run_actions(self, question: str) -> str | None:
@@ -140,6 +141,24 @@ class LLMService:
         if remember_user and question:
             self._history.append({"role": "user", "content": question})
         self._history.append({"role": "assistant", "content": reply})
+
+    def _last_assistant_reply_was_closing(self) -> bool:
+        for item in reversed(self._history):
+            if item["role"] != "assistant":
+                continue
+            lower = item["content"].lower()
+            return any(
+                phrase in lower
+                for phrase in (
+                    "have a great day",
+                    "feel free to call",
+                    "thanks for speaking",
+                    "thank you",
+                    "goodbye",
+                    "bye",
+                )
+            )
+        return False
 
     async def _tts_worker(self, queue: asyncio.Queue) -> None:
         while True:

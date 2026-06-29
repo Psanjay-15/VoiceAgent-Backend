@@ -31,6 +31,8 @@ class QueuedActionExecutor:
                     action_lines.append(await self._schedule_online(action))
                 elif kind == "in_person_meet":
                     action_lines.append(f"In-person meeting requested: {action.get('summary')}")
+                elif kind == "admin_followup":
+                    action_lines.append(f"Admin contact/follow-up requested: {action.get('summary')}")
             except Exception as exc:
                 log.warning("business action failed (%s): %s", kind, exc)
                 action_lines.append(f"{kind} failed: {exc}")
@@ -43,6 +45,8 @@ class QueuedActionExecutor:
         email = action.get("email")
         if not email:
             return f"Online meeting request needs email: {action.get('summary')}"
+        if not action.get("email_verified"):
+            return f"Online meeting request needs verified email before scheduling: {email}"
         result = await schedule_online_meeting(
             attendee_email=email,
             requested_time=action.get("requested_time") or action.get("summary"),

@@ -31,7 +31,7 @@ def parse_decision(raw: str, history: list[Message], question: str) -> dict[str,
     transcript = format_transcript(history, question)
     email = normalize_email(data.get("email") or extract_email(question) or extract_email(transcript))
     action = data.get("action") or "none"
-    if action not in {"in_person_meet", "online_meet", "none"}:
+    if action not in {"admin_followup", "in_person_meet", "online_meet", "none"}:
         action = "none"
 
     fallback = fallback_action(history, question)
@@ -60,6 +60,8 @@ def normalize_email(email: str | None) -> str | None:
 def fallback_action(history: list[Message], question: str) -> ActionType:
     lower = question.lower()
     if pending_online_email(history) and extract_email(question):
+        return "online_meet"
+    if has_pending_meeting_request(history) and looks_like_meeting_detail(lower):
         return "online_meet"
     if has_pending_meeting_request(history) and any(phrase in lower for phrase in ("go ahead", "schedule it", "send invite")):
         return "online_meet"
@@ -104,6 +106,24 @@ def fallback_action(history: list[Message], question: str) -> ActionType:
         )
     ):
         return "online_meet"
+    if any(
+        phrase in lower
+        for phrase in (
+            "admin contact",
+            "admin details",
+            "contact details",
+            "contact detail",
+            "contact admin",
+            "admin phone",
+            "admin email",
+            "team contact",
+            "talk to admin",
+            "speak to admin",
+            "human follow up",
+            "human follow-up",
+        )
+    ):
+        return "admin_followup"
     return "none"
 
 
@@ -121,6 +141,8 @@ def should_classify_business_action(history: list[Message], question: str) -> bo
             "appointment",
             "calendar",
             "invite",
+            "admin",
+            "contact",
             "email",
             "visit",
         )
@@ -132,6 +154,8 @@ def latest_turn_supports_action(history: list[Message], question: str, action: A
         return fallback_action(history, question) == "online_meet"
     if action == "in_person_meet":
         return fallback_action(history, question) == "in_person_meet"
+    if action == "admin_followup":
+        return fallback_action(history, question) == "admin_followup"
     return False
 
 
@@ -146,6 +170,8 @@ def has_pending_meeting_request(history: list[Message]) -> bool:
             "calendar meeting" in item["content"].lower()
             or "meeting email" in item["content"].lower()
             or "send the invite" in item["content"].lower()
+            or "schedule the meeting" in item["content"].lower()
+            or "date and time" in item["content"].lower()
         )
         for item in history[-6:]
     )

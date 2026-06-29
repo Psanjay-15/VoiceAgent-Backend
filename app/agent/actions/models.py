@@ -5,7 +5,7 @@ from typing import Any, Literal, Optional, TypedDict
 
 from app.llm.base import Message
 
-ActionType = Literal["in_person_meet", "online_meet", "none"]
+ActionType = Literal["admin_followup", "in_person_meet", "online_meet", "none"]
 
 
 class ActionState(TypedDict, total=False):
