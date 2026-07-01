@@ -36,8 +36,8 @@ async def schedule_online_meeting(
     request_id: str | None = None,
 ) -> CalendarResult:
 
-    if not settings.google_credentials_file:
-        log.warning("Google Calendar not configured - missing GOOGLE_CREDENTIALS_FILE")
+    if not (settings.google_credentials_file or settings.google_credentials_json):
+        log.warning("Google Calendar not configured - missing GOOGLE_CREDENTIALS_FILE or GOOGLE_CREDENTIALS_JSON")
         return CalendarResult(False, "Google Calendar is not configured.")
 
     return await asyncio.to_thread(
@@ -87,16 +87,15 @@ def _schedule_online_meeting_sync(
     except ImportError:
         return CalendarResult(False, "Google Calendar libraries are not installed.")
 
-    creds = None
+    creds = _load_google_token_credentials(Credentials)
     token_path = _token_path()
-    if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
             token_path.write_text(creds.to_json(), encoding="utf-8")
         else:
+            log.warning("Google Calendar is not authorized - missing/invalid token")
             return CalendarResult(
                 False,
                 "Google Calendar is not authorized. Open /auth/google/start once.",
@@ -296,12 +295,14 @@ def _build_web_flow():
     except ImportError as exc:
         raise RuntimeError("Google OAuth libraries are not installed.") from exc
 
-    credentials_path = _credentials_path()
-    if not credentials_path.exists():
-        raise RuntimeError(f"Google credentials file not found: {credentials_path}")
-
     _allow_localhost_http_for_dev(settings.google_redirect_uri)
-    flow = Flow.from_client_secrets_file(str(credentials_path), scopes=SCOPES)
+    if settings.google_credentials_json:
+        flow = Flow.from_client_config(json.loads(settings.google_credentials_json), scopes=SCOPES)
+    else:
+        credentials_path = _credentials_path()
+        if not credentials_path.exists():
+            raise RuntimeError(f"Google credentials file not found: {credentials_path}")
+        flow = Flow.from_client_secrets_file(str(credentials_path), scopes=SCOPES)
     flow.redirect_uri = settings.google_redirect_uri
     return flow
 
@@ -316,6 +317,18 @@ def _credentials_path() -> Path:
     if not settings.google_credentials_file:
         raise RuntimeError("GOOGLE_CREDENTIALS_FILE is not set.")
     return _resolve_server_path(settings.google_credentials_file)
+
+
+def _load_google_token_credentials(credentials_class):
+    if settings.google_token_json:
+        try:
+            return credentials_class.from_authorized_user_info(json.loads(settings.google_token_json), SCOPES)
+        except (ValueError, json.JSONDecodeError) as exc:
+            log.warning("GOOGLE_TOKEN_JSON is invalid: %s", exc)
+    token_path = _token_path()
+    if token_path.exists():
+        return credentials_class.from_authorized_user_file(str(token_path), SCOPES)
+    return None
 
 
 def _token_path() -> Path:

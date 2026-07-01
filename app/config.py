@@ -57,7 +57,9 @@ class Settings:
 
         self.google_calendar_id: str = _env("GOOGLE_CALENDAR_ID", "primary") or "primary"
         self.google_credentials_file: str | None = _env("GOOGLE_CREDENTIALS_FILE")
+        self.google_credentials_json: str | None = _env("GOOGLE_CREDENTIALS_JSON")
         self.google_token_file: str | None = _env("GOOGLE_TOKEN_FILE")
+        self.google_token_json: str | None = _env("GOOGLE_TOKEN_JSON")
         self.google_redirect_uri: str = (
             _env("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
             or "http://localhost:8000/auth/google/callback"

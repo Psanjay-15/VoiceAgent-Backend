@@ -19,8 +19,10 @@ log = get_logger(__name__)
 class QueuedActionExecutor:
     async def flush(self, actions: list[dict[str, Any]], history: list[Message]) -> None:
         if not history:
+            log.info("skipping final action flush because conversation history is empty")
             return
 
+        log.info("flushing %d queued business action(s)", len(actions))
         summary = await summarize_for_admin(history)
         action_lines: list[str] = []
 
@@ -39,7 +41,10 @@ class QueuedActionExecutor:
 
         admin_body = admin_final_body(summary, action_lines)
         if settings.admin_email:
-            await send_email(settings.admin_email, "Voice Agent call summary", admin_body)
+            sent = await send_email(settings.admin_email, "Voice Agent call summary", admin_body)
+            log.info("admin summary email sent=%s to=%s", sent, settings.admin_email)
+        else:
+            log.warning("ADMIN_EMAIL not configured - final summary email not sent")
 
     async def _schedule_online(self, action: dict[str, Any]) -> str:
         email = action.get("email")
@@ -56,6 +61,7 @@ class QueuedActionExecutor:
         detail = result.message
         if result.event_link:
             detail += f" Link: {result.event_link}"
+        log.info("calendar schedule result success=%s email=%s message=%s", result.success, email, result.message)
         return f"Online meeting for {email}: {detail}. Request: {action.get('summary')}"
 
 
