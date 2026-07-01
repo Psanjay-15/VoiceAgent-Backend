@@ -17,11 +17,11 @@ IDLE_CONVERSATION_TIMEOUT = 45.0
 
 
 class TranscriptionService:
-    def __init__(self, websocket: WebSocket) -> None:
+    def __init__(self, websocket: WebSocket, user_email: str | None = None) -> None:
         self._ws = websocket
         self._provider = get_stt_provider()
         self._send_lock = asyncio.Lock()
-        self._llm = LLMService(websocket, self._send_lock)
+        self._llm = LLMService(websocket, self._send_lock, user_email=user_email)
         self._turn_intent = TurnIntentClassifier()
         self._stream = None
         self._forward_task = None

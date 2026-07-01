@@ -64,6 +64,12 @@ class Settings:
         )
         self.default_timezone: str = _env("DEFAULT_TIMEZONE", "Asia/Kolkata") or "Asia/Kolkata"
 
+        self.mongodb_uri: str | None = _env("MONGODB_URI")
+        self.mongodb_db_name: str = _env("MONGODB_DB_NAME", "voice_agent") or "voice_agent"
+        self.jwt_secret_key: str = _env("JWT_SECRET_KEY", "change-this-secret") or "change-this-secret"
+        self.jwt_algorithm: str = _env("JWT_ALGORITHM", "HS256") or "HS256"
+        self.jwt_access_token_expire_minutes: int = _env_int("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 10080)
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

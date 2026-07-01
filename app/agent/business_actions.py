@@ -28,7 +28,7 @@ log = get_logger(__name__)
 class BusinessActionAgent:
     """LangGraph router for agentic business actions around the voice conversation."""
 
-    def __init__(self) -> None:
+    def __init__(self, known_user_email: str | None = None) -> None:
         self._provider = get_llm_provider()
         self._graph = build_business_action_graph(
             decide=self._decide,
@@ -40,6 +40,9 @@ class BusinessActionAgent:
         )
         self._executor = QueuedActionExecutor()
         self._email_state = ConversationEmailState()
+        self._known_user_email = known_user_email
+        if known_user_email:
+            self._email_state.remember(known_user_email)
         self._pending_actions: list[dict[str, Any]] = []
         self._pending_email_confirmation: Optional[str] = None
         self._awaiting_corrected_meeting_email = False
@@ -233,6 +236,8 @@ class BusinessActionAgent:
         return decision.get("email") or self._email_state.current_email or self._pending_action_value("online_meet", "email")
 
     def _is_email_verified(self, email: str) -> bool:
+        if self._known_user_email and email == self._known_user_email:
+            return True
         existing = self._find_pending_action("online_meet")
         return bool(existing and existing.get("email") == email and existing.get("email_verified"))
 

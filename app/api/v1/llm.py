@@ -41,12 +41,17 @@ class LLMService:
     """Streams the LLM reply, feeds it chunk-by-chunk to TTS, and keeps the
     running conversation so the model remembers what the caller already said."""
 
-    def __init__(self, websocket: WebSocket, send_lock: asyncio.Lock) -> None:
+    def __init__(
+        self,
+        websocket: WebSocket,
+        send_lock: asyncio.Lock,
+        user_email: str | None = None,
+    ) -> None:
         self._ws = websocket
         self._lock = send_lock
         self._provider = get_llm_provider()
         self._tts = TTSService(websocket, send_lock)
-        self._actions = BusinessActionAgent()
+        self._actions = BusinessActionAgent(known_user_email=user_email)
         self._history: list[dict] = []   # running [user/assistant] turns for context
         self._finish_lock = asyncio.Lock()
         self._finished = False
