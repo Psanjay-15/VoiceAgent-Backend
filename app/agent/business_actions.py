@@ -172,6 +172,11 @@ class BusinessActionAgent:
                 existing["summary"] = decision["summary"]
             return
 
+        if decision.get("summary") and _has_time_signal(decision["summary"]):
+            existing["requested_time"] = decision["summary"]
+            existing["summary"] = decision["summary"]
+            return
+
         if not existing.get("summary") and decision.get("summary"):
             existing["summary"] = decision["summary"]
 

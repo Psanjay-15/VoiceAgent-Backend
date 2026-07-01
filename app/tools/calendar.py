@@ -165,7 +165,7 @@ def _parse_or_default_time(value: str | None) -> datetime:
 
 def _parse_natural_meeting_time(value: str, tz: ZoneInfo) -> datetime | None:
     lower = value.lower()
-    explicit_date = _parse_numeric_date(lower, tz)
+    explicit_date = _parse_numeric_date(lower, tz) or _parse_month_name_date(lower, tz)
     if explicit_date is not None:
         hour, minute = _parse_natural_time(lower)
         return explicit_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -193,6 +193,10 @@ def _parse_natural_meeting_time(value: str, tz: ZoneInfo) -> datetime | None:
             day = now + timedelta(days=1)
         elif "today" in lower:
             day = now
+        elif _has_natural_time(lower):
+            hour, minute = _parse_natural_time(lower)
+            candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            return candidate if candidate > now else candidate + timedelta(days=1)
         else:
             return None
 
@@ -216,15 +220,63 @@ def _parse_numeric_date(lower: str, tz: ZoneInfo) -> datetime | None:
         return None
 
 
+def _parse_month_name_date(lower: str, tz: ZoneInfo) -> datetime | None:
+    months = {
+        "january": 1,
+        "jan": 1,
+        "february": 2,
+        "feb": 2,
+        "march": 3,
+        "mar": 3,
+        "april": 4,
+        "apr": 4,
+        "may": 5,
+        "june": 6,
+        "jun": 6,
+        "july": 7,
+        "jul": 7,
+        "august": 8,
+        "aug": 8,
+        "september": 9,
+        "sep": 9,
+        "sept": 9,
+        "october": 10,
+        "oct": 10,
+        "november": 11,
+        "nov": 11,
+        "december": 12,
+        "dec": 12,
+    }
+    names = "|".join(sorted(months, key=len, reverse=True))
+    match = re.search(
+        rf"\b({names})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(\d{{2,4}}))?\b",
+        lower,
+    )
+    if not match:
+        return None
+    month = months[match.group(1)]
+    day = int(match.group(2))
+    year = int(match.group(3)) if match.group(3) else datetime.now(tz).year
+    if year < 100:
+        year += 2000
+    try:
+        return datetime(year, month, day, tzinfo=tz)
+    except ValueError:
+        log.info("Could not parse month-name meeting date: %s", match.group(0))
+        return None
+
+
 def _parse_natural_time(lower: str) -> tuple[int, int]:
     if "noon" in lower:
         return 12, 0
-    match = re.search(r"\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(am|pm)?\b", lower)
+    match = re.search(r"\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(am|pm)\b", lower)
+    if not match:
+        match = re.search(r"\bat\s+([01]?\d|2[0-3])(?::([0-5]\d))?\b", lower)
     if not match:
         return 11, 0
     hour = int(match.group(1))
     minute = int(match.group(2) or 0)
-    suffix = match.group(3)
+    suffix = match.group(3) if len(match.groups()) >= 3 else None
     if suffix == "pm" and hour < 12:
         hour += 12
     elif suffix == "am" and hour == 12:
@@ -232,6 +284,10 @@ def _parse_natural_time(lower: str) -> tuple[int, int]:
     elif suffix is None and hour == 12:
         hour = 12
     return hour, minute
+
+
+def _has_natural_time(lower: str) -> bool:
+    return "noon" in lower or bool(re.search(r"\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(am|pm)\b", lower))
 
 
 def _build_web_flow():

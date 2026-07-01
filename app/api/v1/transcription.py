@@ -67,6 +67,8 @@ class TranscriptionService:
             await self._llm.greet()   
         elif data.get("type") == "stop":
             await self._close_conversation("client_stop")
+        elif data.get("type") == "interrupt":
+            await self._interrupt_answer("client_barge_in")
 
     async def _finish_summary(self) -> None:
         if self._finished_summary:
@@ -86,6 +88,8 @@ class TranscriptionService:
             if self._closing:
                 break
             self._cancel_idle_timer()
+            if transcript.text.strip():
+                await self._interrupt_answer("speech_barge_in")
             async with self._send_lock:
                 with contextlib.suppress(Exception):
                     await self._ws.send_json(
@@ -138,6 +142,19 @@ class TranscriptionService:
         current = asyncio.current_task()
         if self._idle_task is not None and self._idle_task is not current and not self._idle_task.done():
             self._idle_task.cancel()
+
+    async def _interrupt_answer(self, reason: str) -> None:
+        current = asyncio.current_task()
+        if self._answer_task is None or self._answer_task.done() or self._answer_task is current:
+            return
+        log.info("interrupting assistant response (%s)", reason)
+        self._answer_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await self._answer_task
+        self._answer_task = None
+        async with self._send_lock:
+            with contextlib.suppress(Exception):
+                await self._ws.send_json({"type": "llm_interrupted"})
 
     async def _close_when_idle(self) -> None:
         try:

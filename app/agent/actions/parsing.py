@@ -40,10 +40,14 @@ def parse_decision(raw: str, history: list[Message], question: str) -> dict[str,
     elif action != "none" and not latest_turn_supports_action(history, question, action):
         action = "none"
 
+    requested_time = data.get("requested_time")
+    if not requested_time and action == "online_meet" and looks_like_meeting_detail(question.lower()):
+        requested_time = question
+
     return {
         "action": action,
         "email": email,
-        "requested_time": data.get("requested_time"),
+        "requested_time": requested_time,
         "summary": data.get("summary") or question,
     }
 

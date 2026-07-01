@@ -92,21 +92,28 @@ class LLMService:
 
         reply = ""
         buffer = ""
-        async for token in self._provider.stream_reply(messages):
-            await self._send({"type": "llm", "text": token})
-            reply += token
-            buffer += token
-            while True:
-                chunk, buffer = self._take_speakable_chunk(buffer)
-                if not chunk:
-                    break
-                await tts_queue.put(chunk)
+        try:
+            async for token in self._provider.stream_reply(messages):
+                await self._send({"type": "llm", "text": token})
+                reply += token
+                buffer += token
+                while True:
+                    chunk, buffer = self._take_speakable_chunk(buffer)
+                    if not chunk:
+                        break
+                    await tts_queue.put(chunk)
 
-        if buffer.strip():
-            await tts_queue.put(buffer.strip())
-        await tts_queue.put(None)
-        await tts_task
-        await self._send({"type": "llm_end"})
+            if buffer.strip():
+                await tts_queue.put(buffer.strip())
+            await tts_queue.put(None)
+            await tts_task
+            await self._send({"type": "llm_end"})
+        except asyncio.CancelledError:
+            tts_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await tts_task
+            await self._send({"type": "llm_interrupted"})
+            raise
 
         self._history.append({"role": "user", "content": question})
         self._history.append({"role": "assistant", "content": reply})
@@ -141,10 +148,14 @@ class LLMService:
         return result.response
 
     async def _send_spoken_reply(self, question: str, reply: str, remember_user: bool = True) -> None:
-        await self._send({"type": "llm_start"})
-        await self._send({"type": "llm", "text": reply})
-        await self._tts.speak(reply)
-        await self._send({"type": "llm_end"})
+        try:
+            await self._send({"type": "llm_start"})
+            await self._send({"type": "llm", "text": reply})
+            await self._tts.speak(reply)
+            await self._send({"type": "llm_end"})
+        except asyncio.CancelledError:
+            await self._send({"type": "llm_interrupted"})
+            raise
         if remember_user and question:
             self._history.append({"role": "user", "content": question})
         self._history.append({"role": "assistant", "content": reply})
