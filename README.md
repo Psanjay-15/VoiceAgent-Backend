@@ -12,7 +12,6 @@ A FastAPI backend for a low-latency voice agent. It powers browser-based voice c
 - [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
-- [Configuration](#configuration)
 - [Running the Server](#running-the-server)
 
 ## Problem Statement
