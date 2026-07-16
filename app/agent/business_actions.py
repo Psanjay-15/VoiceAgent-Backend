@@ -59,6 +59,19 @@ class BusinessActionAgent:
         return ActionResult(response=state.get("response"), status=state.get("action_status"))
 
     def _handle_email_control_turn(self, question: str) -> Optional[ActionResult]:
+        lower = question.lower()
+        asks_about_meeting_email = "email" in lower and any(
+            phrase in lower for phrase in ("show", "repeat", "confirm", "what is", "tell me", "correct")
+        )
+        if self._known_user_email and self._has_pending_action("online_meet") and not _has_time_signal(question) and (
+            extract_email(question) or asks_about_meeting_email
+        ):
+            self._email_state.remember(self._known_user_email)
+            return ActionResult(
+                response="I already have the meeting invite email on file.",
+                status="known_email_on_file",
+            )
+
         result = self._handle_pending_email_confirmation(question)
         if result is not None:
             return result
@@ -238,7 +251,7 @@ class BusinessActionAgent:
         )
 
     def _effective_email(self, decision: dict[str, Any]) -> Optional[str]:
-        return decision.get("email") or self._email_state.current_email or self._pending_action_value("online_meet", "email")
+        return self._known_user_email or decision.get("email") or self._email_state.current_email or self._pending_action_value("online_meet", "email")
 
     def _is_email_verified(self, email: str) -> bool:
         if self._known_user_email and email == self._known_user_email:

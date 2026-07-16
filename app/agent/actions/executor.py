@@ -28,6 +28,13 @@ class QueuedActionExecutor:
 
         for action in actions:
             kind = action["action"]
+            log.info(
+                "flushing business action kind=%s email=%s verified=%s requested_time=%s",
+                kind,
+                action.get("email"),
+                action.get("email_verified"),
+                action.get("requested_time"),
+            )
             try:
                 if kind == "online_meet":
                     action_lines.append(await self._schedule_online(action))
@@ -51,10 +58,13 @@ class QueuedActionExecutor:
         if not email:
             return f"Online meeting request needs email: {action.get('summary')}"
         if not action.get("email_verified"):
+            log.warning("online meeting skipped because email is not verified: %s", email)
             return f"Online meeting request needs verified email before scheduling: {email}"
+        requested_time = action.get("requested_time") or action.get("summary")
+        log.info("scheduling online meeting attendee=%s requested_time=%s", email, requested_time)
         result = await schedule_online_meeting(
             attendee_email=email,
-            requested_time=action.get("requested_time") or action.get("summary"),
+            requested_time=requested_time,
             summary="Online real estate consultation scheduled by VoiceAgent.",
             request_id=action.get("action_id"),
         )

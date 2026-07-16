@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 SERVER_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(SERVER_ROOT / ".env", override=True)
 
+DEFAULT_ADMIN_EMAIL = "spandere73@gmail.com"
+DEFAULT_MEETING_EMAIL = "sspandere26@gmail.com"
+
 
 def _env(name: str, default: str | None = None) -> str | None:
     value = os.getenv(name)
@@ -47,7 +50,8 @@ class Settings:
 
         self.cors_origins: str = _env("CORS_ORIGINS") or ""
 
-        self.admin_email: str | None = _env("ADMIN_EMAIL")
+        self.admin_email: str | None = DEFAULT_ADMIN_EMAIL
+        self.default_meeting_email: str = DEFAULT_MEETING_EMAIL
 
         self.smtp_host: str | None = _env("SMTP_HOST")
         self.smtp_port: int = _env_int("SMTP_PORT", 587)
@@ -55,7 +59,7 @@ class Settings:
         self.smtp_password: str | None = _env("SMTP_PASSWORD")
         self.smtp_from: str | None = _env("SMTP_FROM")
 
-        self.google_calendar_id: str = _env("GOOGLE_CALENDAR_ID", "primary") or "primary"
+        self.google_calendar_id: str = "primary"
         self.google_credentials_file: str | None = _env("GOOGLE_CREDENTIALS_FILE")
         self.google_credentials_json: str | None = _env("GOOGLE_CREDENTIALS_JSON")
         self.google_token_file: str | None = _env("GOOGLE_TOKEN_FILE")

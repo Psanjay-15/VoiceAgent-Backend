@@ -55,7 +55,7 @@ def build_google_authorization_url() -> str:
     authorization_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
-        prompt="consent",
+        prompt="consent select_account",
     )
     _save_oauth_state(flow)
     return authorization_url
@@ -92,8 +92,16 @@ def _schedule_online_meeting_sync(
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            token_path.write_text(creds.to_json(), encoding="utf-8")
+            try:
+                creds.refresh(Request())
+                token_path.write_text(creds.to_json(), encoding="utf-8")
+                log.info("Google Calendar token refreshed successfully")
+            except Exception as exc:
+                log.warning("Google Calendar token refresh failed: %s", exc)
+                return CalendarResult(
+                    False,
+                    "Google Calendar token refresh failed. Reconnect Google Calendar at /auth/google/start.",
+                )
         else:
             log.warning("Google Calendar is not authorized - missing/invalid token")
             return CalendarResult(
@@ -102,8 +110,19 @@ def _schedule_online_meeting_sync(
             )
 
     service = build("calendar", "v3", credentials=creds)
+    admin_calendar_error = _validate_admin_calendar(service)
+    if admin_calendar_error is not None:
+        return admin_calendar_error
+
     start = _parse_or_default_time(requested_time)
     end = start + timedelta(minutes=duration_minutes)
+    log.info(
+        "Google Calendar event time start=%s end=%s calendar_id=%s attendee=%s",
+        start.isoformat(),
+        end.isoformat(),
+        settings.google_calendar_id,
+        attendee_email,
+    )
     body = {
         "summary": "Online real estate consultation",
         "description": summary,
@@ -136,7 +155,35 @@ def _schedule_online_meeting_sync(
             return CalendarResult(True, "Online meeting was already scheduled.")
         raise
     link = event.get("hangoutLink") or event.get("htmlLink")
+    organizer_email = (event.get("organizer") or {}).get("email")
+    log.info("Google Calendar event organizer=%s calendar_id=%s", organizer_email, settings.google_calendar_id)
     return CalendarResult(True, "Online meeting scheduled.", link)
+
+
+def _validate_admin_calendar(service) -> CalendarResult | None:
+    expected_email = (settings.admin_email or "").lower()
+    try:
+        primary_calendar = service.calendarList().get(calendarId="primary").execute()
+    except Exception as exc:
+        log.warning("Could not inspect authorized Google primary calendar: %s", exc)
+        return CalendarResult(False, "Could not verify the connected Google Calendar account.")
+
+    connected_email = str(primary_calendar.get("id") or "").lower()
+    if connected_email != expected_email:
+        log.warning(
+            "Google Calendar connected account mismatch connected=%s expected=%s",
+            connected_email or "unknown",
+            expected_email,
+        )
+        return CalendarResult(
+            False,
+            (
+                "Google Calendar is connected to the wrong account "
+                f"({connected_email or 'unknown'}). Reconnect using {expected_email}."
+            ),
+        )
+    log.info("Google Calendar connected admin account verified: %s", connected_email)
+    return None
 
 
 def _calendar_event_id(request_id: str) -> str:
