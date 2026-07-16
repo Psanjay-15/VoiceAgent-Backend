@@ -168,10 +168,22 @@ class TranscriptionService:
             return
         self._closing = True
         self._cancel_idle_timer()
+        await self._close_stt_stream()
         await self._llm.close_conversation(reason)
         self._finished_summary = True
         with contextlib.suppress(Exception):
             await self._ws.close(code=1000, reason=reason)
+
+    async def _close_stt_stream(self) -> None:
+        if self._stream is not None:
+            with contextlib.suppress(Exception):
+                await self._stream.close()
+            self._stream = None
+        if self._forward_task is not None:
+            self._forward_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._forward_task
+            self._forward_task = None
 
     async def _is_end_conversation(self, text: str) -> bool:
         if not self._may_be_end_conversation(text):
@@ -231,10 +243,6 @@ class TranscriptionService:
         for task in (self._silence_task, self._answer_task, self._forward_task, self._idle_task):
             if task is not None:
                 task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            if self._forward_task is not None:
-                await self._forward_task
-        if self._stream is not None:
-            await self._stream.close()
+        await self._close_stt_stream()
         await self._finish_summary()
         log.info("transcription session ended")

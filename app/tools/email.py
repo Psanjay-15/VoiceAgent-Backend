@@ -21,8 +21,19 @@ async def send_email(to: str, subject: str, body: str) -> bool:
     msg.set_content(body)
 
     try:
-        await asyncio.to_thread(_send_sync, msg)
+        log.info("sending SMTP email to=%s subject=%r host=%s port=%s", to, subject, settings.smtp_host, settings.smtp_port)
+        await asyncio.wait_for(
+            asyncio.to_thread(_send_sync, msg),
+            timeout=settings.smtp_timeout_seconds + 5,
+        )
         return True
+    except asyncio.TimeoutError:
+        log.warning(
+            "SMTP timeout sending to %s after %s seconds",
+            to,
+            settings.smtp_timeout_seconds + 5,
+        )
+        return False
     except Exception as e:
         log.warning("SMTP error sending to %s: %s", to, e)
         return False
@@ -31,7 +42,7 @@ async def send_email(to: str, subject: str, body: str) -> bool:
 def _send_sync(msg: EmailMessage) -> None:
     import smtplib
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as s:
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout_seconds) as s:
         s.starttls()
         s.login(settings.smtp_user, settings.smtp_password)
         s.send_message(msg)

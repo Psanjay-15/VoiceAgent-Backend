@@ -58,6 +58,7 @@ class Settings:
         self.smtp_user: str | None = _env("SMTP_USER")
         self.smtp_password: str | None = _env("SMTP_PASSWORD")
         self.smtp_from: str | None = _env("SMTP_FROM")
+        self.smtp_timeout_seconds: int = _env_int("SMTP_TIMEOUT_SECONDS", 20)
 
         self.google_calendar_id: str = "primary"
         self.google_credentials_file: str | None = _env("GOOGLE_CREDENTIALS_FILE")
