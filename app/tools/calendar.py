@@ -367,14 +367,14 @@ def _credentials_path() -> Path:
 
 
 def _load_google_token_credentials(credentials_class):
+    token_path = _token_path()
+    if token_path.exists():
+        return credentials_class.from_authorized_user_file(str(token_path), SCOPES)
     if settings.google_token_json:
         try:
             return credentials_class.from_authorized_user_info(json.loads(settings.google_token_json), SCOPES)
         except (ValueError, json.JSONDecodeError) as exc:
             log.warning("GOOGLE_TOKEN_JSON is invalid: %s", exc)
-    token_path = _token_path()
-    if token_path.exists():
-        return credentials_class.from_authorized_user_file(str(token_path), SCOPES)
     return None
 
 
